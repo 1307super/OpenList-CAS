@@ -1,7 +1,7 @@
 <div align="center">
   <img style="width: 128px; height: 128px;" src="https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg" alt="logo" />
 
-  <p><em>OpenList is a resilient, long-term governance, community-driven fork of AList — built to defend open source against trust-based attacks.</em></p>
+  <p><em>OpenList 是一个有韧性、长期治理、社区驱动的 AList 分支，旨在防御基于信任的开源攻击。</em></p>
 
   <img src="https://goreportcard.com/badge/github.com/OpenListTeam/OpenList/v3" alt="latest version" />
   <a href="https://github.com/OpenListTeam/OpenList/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenListTeam/OpenList" alt="License" /></a>
@@ -13,152 +13,309 @@
 </div>
 
 ---
+# OpenList-CAS
 
-- English | [中文](./README_cn.md) | [日本語](./README_ja.md) | [Dutch](./README_nl.md)
+基于 [OpenList](https://github.com/OpenListTeam/OpenList) 的非官方增强版本，围绕 `.cas` 元数据文件提供生成、恢复、自动恢复与临时播放文件能力。
 
-- [Contributing](./CONTRIBUTING.md)
-- [CODE OF CONDUCT](./CODE_OF_CONDUCT.md)
-- [LICENSE](./LICENSE)
+## ✨ TL;DR
 
-## Disclaimer
+- 📦 上传普通文件后可自动生成 `.cas`
+- 🗑️ 可在生成 `.cas` 后自动删除源文件
+- ⚡ 可通过 `.cas` 快速恢复原文件
+- 🗑️ 可在恢复原文件后自动删除 `.cas` 文件
+- 🎬 支持通过 `.cas` 恢复临时播放文件并进行视频播放
+- ♻️ 删除源文件、`.cas` 文件和临时播放文件时同步清理回收站
 
-OpenList is an open-source project independently maintained by the OpenList Team, following the AGPL-3.0 license and committed to maintaining complete code openness and modification transparency.
+---
 
-We have noticed the emergence of some third-party projects in the community with names similar to this project, such as OpenListApp/OpenListApp, as well as some paid proprietary software using the same or similar naming. To avoid user confusion, we hereby declare:
+## 🧠 核心理念
 
-- OpenList has no official association with any third-party derivative projects.
+> 用“可验证的文件特征”替代“文件本体存储”，在尽量降低存储占用的同时，保留文件恢复能力。
 
-- All software, code, and services of this project are maintained by the OpenList Team and are freely available on GitHub.
+---
 
-- Project documentation and API services primarily rely on charitable resources provided by Cloudflare. There are currently no paid plans or commercial deployments, and the use of existing features does not involve any costs.
+## 🔄 工作流程
 
-We respect the community's rights to free use and derivative development, but we also strongly urge downstream projects:
+> 上传 → 提取特征 → 生成 `.cas` → 按需删除原文件 → 需要时恢复
 
-- Should not use the "OpenList" name for impersonation promotion or commercial gain;
+```mermaid
+graph LR
+    A[上传原文件] --> B[生成 .cas]
+    B --> C[保留 .cas 元数据]
+    B --> D[按配置删除原文件]
+    C --> E[节省存储空间]
+    C --> F[恢复源文件]
+    F --> G[播放 / 下载 / 使用]
+```
 
-- Must not distribute OpenList-based code in a closed-source manner or violate AGPL license terms.
+---
 
-To better maintain healthy ecosystem development, we recommend:
+## 🚀 使用场景
 
-- Clearly indicate the project source and choose appropriate open-source licenses in accordance with the open-source spirit;
+- 📉 **低存储环境**
+  仅保留 `.cas`，显著减少空间占用
 
-- If involving commercial use, please avoid using "OpenList" or any confusing naming as the project name;
+- ☁️ **网盘秒传恢复**
+  通过哈希特征恢复文件，避免重复上传
 
-- If you need to use materials located under OpenListTeam/Logo, you may modify and use them under compliance with the agreement.
+- 🎬 **媒体库归档**
+  平时只保留 `.cas`，需要时再恢复并播放
 
-Thank you for your support and understanding of the OpenList project.
+- 🔁 **自动化工作流**
+  自动扫描监控目录中的 `.cas` 并恢复源文件
 
-## Features
+---
 
-- [x] Multiple storages
-  - [x] Local storage
-  - [x] [Aliyundrive](https://www.alipan.com)
-  - [x] OneDrive / Sharepoint ([Global](https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage), [CN](https://portal.partner.microsoftonline.cn), DE, US)
-  - [x] [189cloud](https://cloud.189.cn) (Personal, Family)
-  - [x] [GoogleDrive](https://drive.google.com)
-  - [x] [123pan](https://www.123pan.com)
-  - [x] [FTP / SFTP](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
-  - [x] [PikPak](https://www.mypikpak.com)
-  - [x] [S3](https://aws.amazon.com/s3)
-  - [x] [Seafile](https://seafile.com)
-  - [x] [UPYUN Storage Service](https://www.upyun.com/products/file-storage)
-  - [x] [WebDAV](https://en.wikipedia.org/wiki/WebDAV)
-  - [x] Teambition([China](https://www.teambition.com), [International](https://us.teambition.com))
-  - [x] [MediaFire](https://www.mediafire.com)
-  - [x] [Mediatrack](https://www.mediatrack.cn)
-  - [x] [ProtonDrive](https://proton.me/drive)
-  - [x] [139yun](https://yun.139.com) (Personal, Family, Group)
-  - [x] [YandexDisk](https://disk.yandex.com)
-  - [x] [BaiduNetdisk](http://pan.baidu.com)
-  - [x] [Terabox](https://www.terabox.com/main)
-  - [x] [UC](https://drive.uc.cn)
-  - [x] [Quark](https://pan.quark.cn)
-  - [x] [Thunder](https://pan.xunlei.com)
-  - [x] [Lanzou](https://www.lanzou.com)
-  - [x] [ILanzou](https://www.ilanzou.com)
-  - [x] [Google photo](https://photos.google.com)
-  - [x] [Mega.nz](https://mega.nz)
-  - [x] [Baidu photo](https://photo.baidu.com)
-  - [x] [SMB](https://en.wikipedia.org/wiki/Server_Message_Block)
-  - [x] [115](https://115.com)
-  - [X] [Cloudreve](https://cloudreve.org)
-  - [x] [Dropbox](https://www.dropbox.com)
-  - [x] [FeijiPan](https://www.feijipan.com)
-  - [x] [dogecloud](https://www.dogecloud.com/product/oss)
-  - [x] [Azure Blob Storage](https://azure.microsoft.com/products/storage/blobs)
-  - [x] [Chaoxing](https://www.chaoxing.com)
-  - [x] [CNB](https://cnb.cool/)
-  - [x] [Degoo](https://degoo.com)
-  - [x] [Doubao](https://www.doubao.com)
-  - [x] [Febbox](https://www.febbox.com)
-  - [x] [GitHub](https://github.com)
-  - [x] [OpenList](https://github.com/OpenListTeam/OpenList)
-  - [x] [Teldrive](https://github.com/tgdrive/teldrive)
-  - [x] [Weiyun](https://www.weiyun.com)
-- [x] Easy to deploy and out-of-the-box
-- [x] File preview (PDF, markdown, code, plain text, ...)
-- [x] Image preview in gallery mode
-- [x] Video and audio preview, support lyrics and subtitles
-- [x] Office documents preview (docx, pptx, xlsx, ...)
-- [x] `README.md` preview rendering
-- [x] File permalink copy and direct file download
-- [x] Dark mode
-- [x] I18n
-- [x] Protected routes (password protection and authentication)
-- [x] WebDAV
-- [x] Docker Deploy
-- [x] Cloudflare Workers proxy
-- [x] File/Folder package download
-- [x] Web upload(Can allow visitors to upload), delete, mkdir, rename, move and copy
-- [x] Offline download
-- [x] Copy files between two storage
-- [x] Multi-thread downloading acceleration for single-thread download/stream
+## 🔧 核心特性
 
-## Document
+- 自动生成 `.cas` 元数据文件
+- 支持生成 `.cas` 后自动删除源文件
+- 支持从 `.cas` 恢复原文件
+- 恢复命名默认按当前 `.cas` 文件名处理
+- 支持恢复成功后自动删除 `.cas`
+- 支持自动扫描监控目录并恢复已有 `.cas`
+- 支持 `.cas` 作为视频播放入口
+- 支持删除时同步清理回收站
+- 支持家庭传输联动，减少个人空间上传流量限制影响
 
-- 📘 [Global Site](https://doc.oplist.org)
-- 📚 [Backup Site](https://doc.openlist.team)
-- 🌏 [CN Site](https://doc.oplist.org.cn)
+---
 
-## Demo
+## ⚙️ 配置说明
 
-- 🌎 [Global Demo](https://demo.oplist.org)
-- 🇨🇳 [CN Demo](https://demo.oplist.org.cn)
+### 189CloudPC
 
-## Discussion
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `Generate cas` | `false` | 上传文件后生成 `.cas` 文件 |
+| `Delete source` | `false` | 生成 `.cas` 文件成功后自动删除源文件，并同步清理回收站中的源文件 |
+| `Restore source from cas` | `false` | 处理 `.cas` 文件时，自动根据其中记录的信息恢复源文件 |
+| `Delete CAS after restore` | `false` | 恢复成功后自动删除 `.cas` 文件，并同步清理回收站中的 `.cas` 文件 |
+| `Auto restore existing cas` | `false` | 开启后会自动扫描监控目录中的 `.cas` 文件并尝试恢复源文件 |
+| `Auto restore existing cas paths` | 空 | 每行一个路径，只监控这些目录及其子目录；留空则不监控 |
 
-Please refer to [*Discussions*](https://github.com/OpenListTeam/OpenList/discussions) for raising general questions, ***Issues* is for bug reports and feature requests only.**
+### Local
 
-## Sponsor
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `Generate cas` | `false` | 上传文件后生成 `.cas` 文件 |
+| `Delete source` | `false` | 生成 `.cas` 后删除源文件 |
 
-[![VPS.Town](https://vps.town/static/images/sponsor.png)](https://vps.town "VPS.Town - Trust, Effortlessly. Your Cloud, Reimagined.")
+---
 
-## License
+## 📦 支持驱动
 
-The `OpenList` is open-source software licensed under the [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) license.
+| 驱动 | 生成 `.cas` | 删除源文件 | 从 `.cas` 恢复 | 自动恢复 | 删除 `.cas` 文件 | `.cas` 视频播放 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `189CloudPC` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `Local` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-## Disclaimer
+---
 
-- This project is a free and open-source software designed to facilitate file sharing via net disks, primarily intended to support the downloading and learning of the Go programming language.
-- Please comply with all applicable laws and regulations when using this software. Any form of misuse is strictly prohibited.
-- The software is based on official SDKs or APIs without any modification, disruption, or interference with their behavior.
-- It only performs HTTP 302 redirects or traffic forwarding, and does not intercept, store, or tamper with any user data.
-- This project is not affiliated with any official platform or service provider.
-- The software is provided "as is", without any warranties of any kind, either express or implied, including but not limited to warranties of merchantability or fitness for a particular purpose.
-- The maintainers are not liable for any direct or indirect damages arising from the use of, or inability to use, this software.
-- You are solely responsible for any risks associated with using this software, including but not limited to account bans or download speed limitations.
-- This project is licensed under the [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) License. Please see the [LICENSE](./LICENSE) file for details.
+## 🖥️ 驱动说明
 
-## Contact Us
+### ☁️ 189CloudPC
 
-- [@GitHub](https://github.com/OpenListTeam)
-- [Telegram Group](https://t.me/OpenListTeam)
-- [Telegram Channel](https://t.me/OpenListOfficial)
+支持：
 
-## Contributors
+- 生成 `.cas`
+- 生成 `.cas` 文件后删除源文件
+- 从 `.cas` 文件恢复源文件
+- 自动恢复监控目录 `.cas` 文件
+- 从 `.cas` 文件恢复源文件后删除 `.cas` 文件
+- `.cas` 视频播放
+- 删除时同步清理回收站
 
-We sincerely thank the author [Xhofe](https://github.com/Xhofe) of the original project [AlistGo/alist](https://github.com/AlistGo/alist) and all other contributors.
+说明：
 
-Thanks goes to these wonderful people:
+- 依赖云端侧可用的恢复能力
+- 播放 `.cas` 时，会先临时恢复文件到 `/TEMP`
+- 恢复出的临时文件会用于获取真实播放链接并进行播放
+- 播放后会自动清理临时文件及回收站中的对应文件
 
-[![Contributors](https://contrib.rocks/image?repo=OpenListTeam/OpenList)](https://github.com/OpenListTeam/OpenList/graphs/contributors)
+### 💻 Local
+
+支持：
+
+- 生成 `.cas`
+- 删除源文件
+
+不支持：
+
+- 从 `.cas` 恢复
+- 自动恢复
+- `.cas` 视频播放
+
+说明：
+
+- 本地存储不具备云盘式恢复能力
+- `.cas` 在 Local 中主要用于节省空间，不用于恢复
+
+---
+
+## 👨‍👩‍👧‍👦 关于家庭传输
+
+`FamilyTransfer` 是 `189CloudPC` 原版已有能力，不是 CAS 新增功能。
+
+开启后：
+
+- 普通上传可通过家庭空间中转，减少个人空间上传流量限制影响
+- 在 `Generate cas + Delete source` 组合下，可只在个人空间保留 `.cas`
+- 临时播放文件恢复也会跟随家庭传输逻辑走家庭侧中转
+
+---
+
+## 🎬 临时播放文件说明
+
+`.cas` 本身不是视频文件，不能直接播放内容本体。
+
+实际流程是：
+
+1. 点击 `.cas`
+2. 恢复临时播放文件到 `/TEMP`
+3. 获取真实视频链接
+4. 开始播放
+5. 播放链拿到链接后删除临时文件，并同步清理回收站中的对应文件
+
+临时播放文件命名格式：
+
+```text
+TEMP_12345_movie.mkv
+```
+
+---
+
+## 🏷️ 命名规则
+
+### 生成 `.cas`
+
+```text
+movie.mkv -> movie.mkv.cas
+```
+
+### 恢复源文件
+
+恢复时默认按当前 `.cas` 文件名推导目标名，并保留原文件扩展名。
+
+例如：
+
+```text
+abc.mp4.cas -> abc.mkv
+test.cas -> test.mkv
+```
+
+---
+
+## 🐳 部署指南
+
+默认端口：
+
+```text
+5244
+```
+
+默认数据目录：
+
+```text
+/opt/openlist/data
+```
+
+### Docker
+
+```bash
+docker run -d --restart=unless-stopped \
+  -v /etc/openlist:/opt/openlist/data \
+  -p 5244:5244 \
+  -e PUID=0 \
+  -e PGID=0 \
+  -e UMASK=022 \
+  --name="openlist-cas" \
+  freeyua/openlist-cas:latest
+```
+
+### Docker Compose
+
+```yaml
+services:
+  openlist-cas:
+    image: freeyua/openlist-cas:latest
+    container_name: openlist-cas
+    restart: unless-stopped
+    ports:
+      - "5244:5244"
+    volumes:
+      - ./data:/opt/openlist/data
+    environment:
+      - PUID=0
+      - PGID=0
+      - UMASK=022
+```
+
+---
+
+## 🌐 访问地址
+
+```text
+http://localhost:5244
+```
+
+---
+
+## ⚠️ 重要说明
+
+`.cas` 只保存恢复所需特征，不保存原文件数据。
+
+这意味着：
+
+- ✅ 云端仍可命中恢复能力时，可以恢复
+- ❌ 云端文件失效、被清理、被风控时，可能无法恢复
+- ❌ `.cas` 不能代替完整备份
+
+请不要将 `.cas` 作为唯一长期备份方案。
+
+---
+
+## ❓ 常见问题
+
+### `.cas` 是备份吗？
+
+不是，`.cas` 只是元数据描述，不包含原文件本体。
+
+
+### 为什么 Local 不支持恢复？
+
+因为本地存储不具备这套恢复链依赖的能力。
+
+### 开启家庭传输后有什么作用？
+
+可以通过家庭空间中转上传，减轻个人空间上传流量限制影响。
+
+---
+
+## 🔗 与上游项目
+
+- 上游项目：[OpenList](https://github.com/OpenListTeam/OpenList)
+- 本项目为非官方增强分支
+
+---
+
+## 📜 免责声明
+
+1. 本项目仅用于学习与技术研究。
+2. 请遵守相关法律法规及服务条款。
+3. 使用本项目产生的风险由使用者自行承担。
+4. 本项目为非官方修改版本，不代表上游项目立场。
+
+---
+
+## 📜 致谢 & 声明
+
+* 感谢原项目 [OpenList](https://github.com/OpenListTeam/OpenList) 提供的基础能力。
+* 本项目为非官方增强分支
+
+⚠️ **仅供学习研究，请遵守法律法规**
+
+---
+
+## ⭐ Star History
+
+如果这个项目帮到了你，欢迎点个 ⭐ 支持！
