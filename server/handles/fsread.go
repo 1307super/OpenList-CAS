@@ -1,17 +1,18 @@
 package handles
 
 import (
+	"context"
 	"fmt"
 	stdpath "path"
 	"strings"
 	"time"
 
 	"github.com/OpenListTeam/OpenList/v4/internal/conf"
+	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/fs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/OpenListTeam/OpenList/v4/internal/op"
-	"github.com/OpenListTeam/OpenList/v4/internal/openlistplus"
 	"github.com/OpenListTeam/OpenList/v4/internal/setting"
 	"github.com/OpenListTeam/OpenList/v4/internal/sign"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
@@ -312,10 +313,8 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 		provider = storage.Config().Name
 	}
 	typeName := obj.GetName()
-	if err == nil && openlistplus.CanPreviewCAS(storage, obj.GetName()) {
-		if previewName, previewErr := openlistplus.ResolveCASPreviewName(c.Request.Context(), storage, obj); previewErr == nil && previewName != "" {
-			typeName = previewName
-		}
+	if err == nil {
+		typeName = resolveCASPreviewTypeName(c.Request.Context(), storage, obj)
 	}
 	if !obj.IsDir() {
 		if err != nil {
@@ -334,7 +333,7 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 					utils.EncodePath(reqPath, true),
 					query)
 			}
-		} else if openlistplus.CanPreviewCAS(storage, obj.GetName()) {
+		} else if typeName != obj.GetName() {
 			rawURL = buildObjectAccessURL(c, reqPath, isEncrypt(meta, reqPath), common.ShouldProxy(storage, typeName))
 		} else {
 			// file have raw url
@@ -385,6 +384,25 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 		Provider: provider,
 		Related:  toObjsResp(related, parentPath, isEncrypt(parentMeta, parentPath)),
 	})
+}
+
+type casPreviewNamer interface {
+	CASPreviewName(ctx context.Context, file model.Obj) (string, error)
+}
+
+func resolveCASPreviewTypeName(ctx context.Context, storage driver.Driver, obj model.Obj) string {
+	if obj == nil {
+		return ""
+	}
+	namer, ok := storage.(casPreviewNamer)
+	if !ok || obj.IsDir() {
+		return obj.GetName()
+	}
+	name, err := namer.CASPreviewName(ctx, obj)
+	if err != nil || name == "" {
+		return obj.GetName()
+	}
+	return name
 }
 
 func buildObjectAccessURL(c *gin.Context, reqPath string, encrypt bool, proxy bool) string {

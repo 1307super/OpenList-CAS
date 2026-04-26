@@ -14,7 +14,6 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/fs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/OpenListTeam/OpenList/v4/internal/net"
-	"github.com/OpenListTeam/OpenList/v4/internal/openlistplus"
 	"github.com/OpenListTeam/OpenList/v4/internal/setting"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/OpenListTeam/OpenList/v4/server/common"
@@ -32,8 +31,8 @@ func Down(c *gin.Context) {
 		common.ErrorPage(c, err, 500)
 		return
 	}
-	if shouldPreviewCASOnDown(c) && openlistplus.CanPreviewCAS(storage, filename) {
-		link, file, _, previewErr := openlistplus.ResolveCASPreviewLinkByMountPath(c.Request.Context(), rawPath, model.LinkArgs{
+	if shouldPreviewCASOnDown(c) {
+		link, file, ok, previewErr := linkCASPreview(c, rawPath, storage, model.LinkArgs{
 			IP:       c.ClientIP(),
 			Header:   c.Request.Header,
 			Type:     c.Query("type"),
@@ -43,7 +42,7 @@ func Down(c *gin.Context) {
 			common.ErrorPage(c, previewErr, 500)
 			return
 		}
-		if link != nil && file != nil {
+		if ok {
 			if common.ShouldProxy(storage, file.GetName()) {
 				proxy(c, link, file, storage.GetStorage().ProxyRange)
 			} else {
@@ -70,21 +69,6 @@ func Down(c *gin.Context) {
 	}
 }
 
-func shouldPreviewCASOnDown(c *gin.Context) bool {
-	if c.Query("type") != "" {
-		return true
-	}
-	if c.GetHeader("Range") != "" {
-		return true
-	}
-	switch strings.ToLower(c.GetHeader("Sec-Fetch-Dest")) {
-	case "video", "audio":
-		return true
-	}
-	accept := strings.ToLower(c.GetHeader("Accept"))
-	return strings.Contains(accept, "video/") || strings.Contains(accept, "audio/")
-}
-
 func Proxy(c *gin.Context) {
 	rawPath := c.Request.Context().Value(conf.PathKey).(string)
 	filename := stdpath.Base(rawPath)
@@ -93,8 +77,8 @@ func Proxy(c *gin.Context) {
 		common.ErrorPage(c, err, 500)
 		return
 	}
-	if openlistplus.CanPreviewCAS(storage, filename) {
-		link, file, _, previewErr := openlistplus.ResolveCASPreviewLinkByMountPath(c.Request.Context(), rawPath, model.LinkArgs{
+	if shouldPreviewCASOnDown(c) {
+		link, file, ok, previewErr := linkCASPreview(c, rawPath, storage, model.LinkArgs{
 			Header: c.Request.Header,
 			Type:   c.Query("type"),
 		})
@@ -102,7 +86,7 @@ func Proxy(c *gin.Context) {
 			common.ErrorPage(c, previewErr, 500)
 			return
 		}
-		if link != nil && file != nil {
+		if ok {
 			proxy(c, link, file, storage.GetStorage().ProxyRange)
 			return
 		}
@@ -127,6 +111,50 @@ func Proxy(c *gin.Context) {
 		common.ErrorPage(c, errors.New("proxy not allowed"), 403)
 		return
 	}
+}
+
+func shouldPreviewCASOnDown(c *gin.Context) bool {
+	if c.Query("type") != "" {
+		return true
+	}
+	if c.GetHeader("Range") != "" {
+		return true
+	}
+	switch strings.ToLower(c.GetHeader("Sec-Fetch-Dest")) {
+	case "video", "audio":
+		return true
+	}
+	accept := strings.ToLower(c.GetHeader("Accept"))
+	return strings.Contains(accept, "video/") || strings.Contains(accept, "audio/")
+}
+
+func linkCASPreview(c *gin.Context, rawPath string, storage driver.Driver, args model.LinkArgs) (*model.Link, model.Obj, bool, error) {
+	namer, ok := storage.(casPreviewNamer)
+	if !ok {
+		return nil, nil, false, nil
+	}
+	obj, err := fs.Get(c.Request.Context(), rawPath, &fs.GetArgs{})
+	if err != nil {
+		return nil, nil, false, err
+	}
+	previewName, err := namer.CASPreviewName(c.Request.Context(), obj)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if previewName == "" || previewName == obj.GetName() {
+		return nil, nil, false, nil
+	}
+	args.Type = "cas_video"
+	link, file, err := fs.Link(c.Request.Context(), rawPath, args)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if file != nil {
+		file = &model.ObjWrapName{Name: previewName, Obj: file}
+	} else {
+		file = &model.Object{Name: previewName, Size: obj.GetSize(), Modified: obj.ModTime(), Ctime: obj.CreateTime(), HashInfo: obj.GetHash()}
+	}
+	return link, file, true, nil
 }
 
 func redirect(c *gin.Context, link *model.Link) {

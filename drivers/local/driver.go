@@ -18,7 +18,6 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
-	"github.com/OpenListTeam/OpenList/v4/internal/openlistplus"
 	"github.com/OpenListTeam/OpenList/v4/internal/sign"
 	"github.com/OpenListTeam/OpenList/v4/internal/stream"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
@@ -131,10 +130,6 @@ func (d *Local) Drop(ctx context.Context) error {
 
 func (d *Local) GetAddition() driver.Additional {
 	return &d.Addition
-}
-
-func (d *Local) OpenListPlusAddition() *openlistplus.Addition {
-	return d.Addition.OpenListPlusAddition()
 }
 
 func (d *Local) List(ctx context.Context, dir model.Obj, args model.ListArgs) ([]model.Obj, error) {
@@ -410,19 +405,11 @@ func (d *Local) Remove(ctx context.Context, obj model.Obj) error {
 	return nil
 }
 
-func (d *Local) Put(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress) (model.Obj, error) {
-	prepared, err := openlistplus.PreparePut(ctx, d, dstDir, file)
-	if err != nil {
-		return nil, err
-	}
-	if prepared.Handled {
-		return prepared.Obj, nil
-	}
-	stream := prepared.Stream
+func (d *Local) Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up driver.UpdateProgress) error {
 	fullPath := filepath.Join(dstDir.GetPath(), stream.GetName())
 	out, err := os.Create(fullPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		_ = out.Close()
@@ -432,10 +419,7 @@ func (d *Local) Put(ctx context.Context, dstDir model.Obj, file model.FileStream
 	}()
 	err = utils.CopyWithCtx(ctx, out, stream, stream.GetSize(), up)
 	if err != nil {
-		return nil, err
-	}
-	if err = out.Close(); err != nil {
-		return nil, err
+		return err
 	}
 	err = os.Chtimes(fullPath, stream.ModTime(), stream.ModTime())
 	if err != nil {
@@ -446,14 +430,14 @@ func (d *Local) Put(ctx context.Context, dstDir model.Obj, file model.FileStream
 		d.directoryMap.UpdateDirParents(dstDir.GetPath())
 	}
 
-	uploadedObj := &model.Object{
+	srcObj := &model.Object{
 		Path:     fullPath,
 		Name:     stream.GetName(),
 		Size:     stream.GetSize(),
 		Modified: stream.ModTime(),
-		Ctime:    stream.CreateTime(),
+		Ctime:    stream.ModTime(),
 	}
-	return openlistplus.FinishPut(ctx, d, dstDir, prepared, uploadedObj)
+	return d.uploadCAS(ctx, dstDir, srcObj)
 }
 
 func (d *Local) GetDetails(ctx context.Context) (*model.StorageDetails, error) {

@@ -4,14 +4,9 @@ on:
   pull_request:
     branches: ["main"]
     paths-ignore:
-      - 'README*.md'
-      - 'CONTRIBUTING.md'
-      - 'SECURITY.md'
-      - 'CODE_OF_CONDUCT.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'LICENSE'
-      - 'docs/**'
+      - "README.md"
+      - "README_*.md"
+      - "docs/**"
   workflow_dispatch:
 
 concurrency:

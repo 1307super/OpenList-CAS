@@ -24,7 +24,6 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
-	"github.com/OpenListTeam/OpenList/v4/internal/openlistplus/casfile"
 	"github.com/OpenListTeam/OpenList/v4/internal/op"
 	"github.com/OpenListTeam/OpenList/v4/internal/setting"
 	"github.com/OpenListTeam/OpenList/v4/internal/stream"
@@ -685,7 +684,7 @@ func (y *Cloud189PC) keepAlive() {
 
 // 普通上传
 // 无法上传大小为0的文件
-func (y *Cloud189PC) StreamUpload(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress, isFamily bool, overwrite bool) (model.Obj, *casfile.Info, error) {
+func (y *Cloud189PC) StreamUpload(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress, isFamily bool, overwrite bool) (model.Obj, *casUploadInfo, error) {
 	// 文件大小
 	fileSize := file.GetSize()
 	// 分片大小，不得为文件大小
@@ -787,9 +786,7 @@ func (y *Cloud189PC) StreamUpload(ctx context.Context, dstDir model.Obj, file mo
 				if err != nil {
 					return err
 				}
-				if up != nil {
-					up(float64(threadG.Success()+1) * 100 / float64(count+1))
-				}
+				up(float64(threadG.Success()+1) * 100 / float64(count+1))
 				return nil
 			},
 			After: func(err error) {
@@ -801,9 +798,7 @@ func (y *Cloud189PC) StreamUpload(ctx context.Context, dstDir model.Obj, file mo
 	if err = threadG.Wait(); err != nil {
 		return nil, nil, err
 	}
-	if up != nil {
-		defer up(100)
-	}
+	defer up(100)
 
 	if fileMd5 != nil {
 		fileMd5Hex = strings.ToUpper(hex.EncodeToString(fileMd5.Sum(nil)))
@@ -829,10 +824,15 @@ func (y *Cloud189PC) StreamUpload(ctx context.Context, dstDir model.Obj, file mo
 	if err != nil {
 		return nil, nil, err
 	}
-	return resp.toFile(), casfile.New(file.GetName(), fileSize, fileMd5Hex, sliceMd5Hex), nil
+	return resp.toFile(), &casUploadInfo{
+		Name:     file.GetName(),
+		Size:     fileSize,
+		MD5:      fileMd5Hex,
+		SliceMD5: sliceMd5Hex,
+	}, nil
 }
 
-func (y *Cloud189PC) RapidUpload(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, isFamily bool, overwrite bool) (model.Obj, *casfile.Info, error) {
+func (y *Cloud189PC) RapidUpload(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, isFamily bool, overwrite bool) (model.Obj, *casUploadInfo, error) {
 	fileMd5 := stream.GetHash().GetHash(utils.MD5)
 	if len(fileMd5) < utils.MD5.Width {
 		return nil, nil, errors.New("invalid hash")
@@ -851,11 +851,16 @@ func (y *Cloud189PC) RapidUpload(ctx context.Context, dstDir model.Obj, stream m
 	if err != nil {
 		return nil, nil, err
 	}
-	return obj, casfile.New(stream.GetName(), stream.GetSize(), fileMd5, fileMd5), nil
+	return obj, &casUploadInfo{
+		Name:     stream.GetName(),
+		Size:     stream.GetSize(),
+		MD5:      fileMd5,
+		SliceMD5: fileMd5,
+	}, nil
 }
 
 // 快传
-func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress, isFamily bool, overwrite bool) (model.Obj, *casfile.Info, error) {
+func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress, isFamily bool, overwrite bool) (model.Obj, *casUploadInfo, error) {
 	var (
 		cache = file.GetFile()
 		tmpF  *os.File
@@ -939,11 +944,7 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 	}
 
 	// 尝试恢复进度
-	sessionKey := y.getTokenInfo().SessionKey
-	if isFamily {
-		sessionKey = y.getTokenInfo().FamilySessionKey
-	}
-	uploadProgress, ok := base.GetUploadProgress[*UploadProgress](y, sessionKey, fileMd5Hex)
+	uploadProgress, ok := base.GetUploadProgress[*UploadProgress](y, y.getTokenInfo().SessionKey, fileMd5Hex)
 	if !ok {
 		// step.2 预上传
 		params := Params{
@@ -1003,9 +1004,7 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 					return err
 				}
 
-				if up != nil {
-					up(float64(threadG.Success()+1) * 100 / float64(len(uploadUrls)+1))
-				}
+				up(float64(threadG.Success()+1) * 100 / float64(len(uploadUrls)+1))
 				uploadProgress.UploadParts[i] = ""
 				return nil
 			})
@@ -1013,13 +1012,11 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 		if err = threadG.Wait(); err != nil {
 			if errors.Is(err, context.Canceled) {
 				uploadProgress.UploadParts = utils.SliceFilter(uploadProgress.UploadParts, func(s string) bool { return s != "" })
-				base.SaveUploadProgress(y, uploadProgress, sessionKey, fileMd5Hex)
+				base.SaveUploadProgress(y, uploadProgress, y.getTokenInfo().SessionKey, fileMd5Hex)
 			}
 			return nil, nil, err
 		}
-		if up != nil {
-			defer up(100)
-		}
+		defer up(100)
 	}
 
 	// step.5 提交
@@ -1035,7 +1032,12 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 	if err != nil {
 		return nil, nil, err
 	}
-	return resp.toFile(), casfile.New(file.GetName(), size, fileMd5Hex, sliceMd5Hex), nil
+	return resp.toFile(), &casUploadInfo{
+		Name:     file.GetName(),
+		Size:     size,
+		MD5:      fileMd5Hex,
+		SliceMD5: sliceMd5Hex,
+	}, nil
 }
 
 // 获取上传切片信息
@@ -1084,7 +1086,7 @@ func (y *Cloud189PC) GetMultiUploadUrls(ctx context.Context, isFamily bool, uplo
 }
 
 // 旧版本上传，家庭云不支持覆盖
-func (y *Cloud189PC) OldUpload(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress, isFamily bool, overwrite bool) (model.Obj, *casfile.Info, error) {
+func (y *Cloud189PC) OldUpload(ctx context.Context, dstDir model.Obj, file model.FileStreamer, up driver.UpdateProgress, isFamily bool, overwrite bool) (model.Obj, *casUploadInfo, error) {
 	tempFile, fileMd5, err := stream.CacheFullAndHash(file, &up, utils.MD5)
 	if err != nil {
 		return nil, nil, err
@@ -1123,7 +1125,7 @@ func (y *Cloud189PC) OldUpload(ctx context.Context, dstDir model.Obj, file model
 
 		// 获取断点状态
 		fullUrl := API_URL + "/getUploadFileStatus.action"
-		if isFamily {
+		if y.isFamily() {
 			fullUrl = API_URL + "/family/file/getFamilyFileStatus.action"
 		}
 		_, err = y.get(fullUrl, func(req *resty.Request) {
@@ -1141,16 +1143,19 @@ func (y *Cloud189PC) OldUpload(ctx context.Context, dstDir model.Obj, file model
 		if _, err := tempFile.Seek(status.GetSize(), io.SeekStart); err != nil {
 			return nil, nil, err
 		}
-		if up != nil {
-			up(float64(status.GetSize()) / float64(file.GetSize()) * 100)
-		}
+		up(float64(status.GetSize()) / float64(file.GetSize()) * 100)
 	}
 
 	obj, err := y.OldUploadCommit(ctx, status.FileCommitUrl, status.UploadFileId, isFamily, overwrite)
 	if err != nil {
 		return nil, nil, err
 	}
-	return obj, casfile.New(file.GetName(), file.GetSize(), fileMd5, fileMd5), nil
+	return obj, &casUploadInfo{
+		Name:     file.GetName(),
+		Size:     file.GetSize(),
+		MD5:      fileMd5,
+		SliceMD5: fileMd5,
+	}, nil
 }
 
 // 创建上传会话
@@ -1231,6 +1236,10 @@ func (y *Cloud189PC) isLogin() bool {
 
 // 创建家庭云中转文件夹
 func (y *Cloud189PC) createFamilyTransferFolder() error {
+	if folder, err := y.findFamilyTransferFolder(context.TODO()); err == nil {
+		y.familyTransferFolder = folder
+		return nil
+	}
 	var rootFolder Cloud189Folder
 	_, err := y.post(API_URL+"/family/file/createFolder.action", func(req *resty.Request) {
 		req.SetQueryParams(map[string]string{
@@ -1245,11 +1254,11 @@ func (y *Cloud189PC) createFamilyTransferFolder() error {
 	return nil
 }
 
-// Clean family transfer folder.
+// 清理中转文件夹
 func (y *Cloud189PC) cleanFamilyTransfer(ctx context.Context) error {
 	transferFolderId := y.familyTransferFolder.GetID()
-	for {
-		resp, err := y.getFilesWithPage(ctx, transferFolderId, true, 1, 100, "lastOpTime", "asc")
+	for pageNum := 1; ; pageNum++ {
+		resp, err := y.getFilesWithPage(ctx, transferFolderId, true, pageNum, 100, "lastOpTime", "asc")
 		if err != nil {
 			return err
 		}
@@ -1292,15 +1301,13 @@ func (y *Cloud189PC) cleanFamilyTransfer(ctx context.Context) error {
 				return err
 			}
 			err = y.WaitBatchTask("CLEAR_RECYCLE", resp.TaskID, time.Second)
-			if err != nil {
-				return err
-			}
+			return err
 		}
 	}
 	return nil
 }
 
-// Get all family cloud users.
+// 获取家庭云所有用户信息
 func (y *Cloud189PC) getFamilyInfoList() ([]FamilyInfoResp, error) {
 	var resp FamilyInfoListResp
 	_, err := y.get(API_URL+"/family/manage/getFamilyList.action", nil, &resp, true)
