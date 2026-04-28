@@ -1,8 +1,10 @@
 package _189pc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,9 +12,11 @@ import (
 	"time"
 
 	"github.com/OpenListTeam/OpenList/v4/drivers/base"
+	"github.com/OpenListTeam/OpenList/v4/internal/casmeta"
 	"github.com/OpenListTeam/OpenList/v4/internal/driver"
 	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
+	istream "github.com/OpenListTeam/OpenList/v4/internal/stream"
 	"github.com/OpenListTeam/OpenList/v4/pkg/cron"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/go-resty/resty/v2"
@@ -61,6 +65,7 @@ func (y *Cloud189PC) GetAddition() driver.Additional {
 
 func (y *Cloud189PC) Init(ctx context.Context) (err error) {
 	y.storageConfig = config
+	casmeta.SetGlobalExtAllowlist(y.CASExtAllowlist)
 	if y.isFamily() {
 		// 兼容旧上传接口
 		if y.Addition.RapidUpload || y.Addition.UploadMethod == "old" {
@@ -370,16 +375,40 @@ func (y *Cloud189PC) Put(ctx context.Context, dstDir model.Obj, stream model.Fil
 	sourceSize := stream.GetSize()
 
 	if y.RestoreSourceFromCAS && isCASName(sourceName) {
-		info, err := y.parseCASFromStreamer(stream)
+		casData, err := io.ReadAll(stream)
 		if err != nil {
 			return nil, err
 		}
-		restored, err := y.restoreCAS(ctx, dstDir, info, sourceName, false)
+		info, err := y.parseCAS(casData)
 		if err != nil {
 			return nil, err
 		}
-		y.notifyTaskDone()
-		return restored, nil
+		restoredName, err := resolveCASRestoreName(sourceName, info)
+		if err != nil {
+			return nil, err
+		}
+		if casmeta.ExtAllowed(restoredName, y.CASExtAllowlist) {
+			restored, err := y.restoreCAS(ctx, dstDir, info, sourceName, false)
+			if err != nil {
+				return nil, err
+			}
+			y.notifyTaskDone()
+			return restored, nil
+		}
+		stream = &istream.FileStream{
+			Ctx: ctx,
+			Obj: &model.Object{
+				Name:     sourceName,
+				Size:     sourceSize,
+				Modified: stream.ModTime(),
+				Ctime:    stream.CreateTime(),
+				HashInfo: stream.GetHash(),
+			},
+			Reader: bytes.NewReader(casData),
+			Mimetype:          stream.GetMimetype(),
+			ForceStreamUpload: stream.IsForceStreamUpload(),
+			Exist:             stream.GetExist(),
+		}
 	}
 
 	newObj, info, err := y.uploadFile(ctx, dstDir, stream, up)
@@ -459,7 +488,8 @@ func (y *Cloud189PC) uploadFile(ctx context.Context, dstDir model.Obj, stream mo
 					return
 				}
 				// 转存家庭云文件到个人云
-				err = y.SaveFamilyFileToPersonCloud(context.TODO(), y.FamilyID, newObj, transferDstDir, true)
+				transferCtx := context.TODO()
+				err = y.SaveFamilyFileToPersonCloud(transferCtx, y.FamilyID, newObj, transferDstDir, true, srcName)
 				// 删除家庭云源文件
 				y.queueFamilyTransferCleanupObj(newObj)
 				// 批量任务有概率删不掉
@@ -468,22 +498,23 @@ func (y *Cloud189PC) uploadFile(ctx context.Context, dstDir model.Obj, stream mo
 					return
 				}
 
-				// 查找转存文件
+				// 优先查找临时名，兼容 targetFileName 被 COPY 接口忽略的情况
 				var file *Cloud189File
-				file, err = y.findFileByName(context.TODO(), newObj.GetName(), transferDstDir.GetID(), false)
+				var needRename bool
+				file, needRename, err = y.waitFamilyTransferFile(transferCtx, transferDstDir, newObj.GetName(), srcName)
 				if err != nil {
-					if err == errs.ObjectNotFound {
-						err = fmt.Errorf("unknown error: No transfer file obtained %s", newObj.GetName())
+					return
+				}
+				if needRename {
+					// 重命名转存文件
+					newObj, err = y.Rename(transferCtx, file, srcName)
+					if err != nil {
+						// 重命名失败删除源文件
+						_ = y.Delete(transferCtx, "", file)
 					}
 					return
 				}
-
-				// 重命名转存文件
-				newObj, err = y.Rename(context.TODO(), file, srcName)
-				if err != nil {
-					// 重命名失败删除源文件
-					_ = y.Delete(context.TODO(), "", file)
-				}
+				newObj = file
 				return
 			}
 		}()
@@ -504,6 +535,35 @@ func (y *Cloud189PC) uploadFile(ctx context.Context, dstDir model.Obj, stream mo
 
 func (y *Cloud189PC) sourceKeptOnlyInFamilyTransfer(info *casUploadInfo) bool {
 	return info != nil && !y.isFamily() && y.FamilyTransfer && y.shouldDeleteSource() && y.shouldUploadCAS(info.Name)
+}
+
+func (y *Cloud189PC) waitFamilyTransferFile(ctx context.Context, dstDir model.Obj, tempName string, finalName string) (*Cloud189File, bool, error) {
+	const attempts = 5
+	for i := 0; i < attempts; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+		if tempName != "" {
+			file, err := y.findFileByName(ctx, tempName, dstDir.GetID(), false)
+			if err == nil {
+				return file, tempName != finalName, nil
+			}
+			if err != errs.ObjectNotFound {
+				return nil, false, err
+			}
+		}
+		if finalName != "" {
+			file, err := y.findFileByName(ctx, finalName, dstDir.GetID(), false)
+			if err == nil {
+				return file, false, nil
+			}
+			if err != errs.ObjectNotFound {
+				return nil, false, err
+			}
+		}
+		time.Sleep(time.Second)
+	}
+	return nil, false, fmt.Errorf("unknown error: No transfer file obtained %s or %s", tempName, finalName)
 }
 
 func (y *Cloud189PC) ensureFamilyTransferFolder(ctx context.Context) error {

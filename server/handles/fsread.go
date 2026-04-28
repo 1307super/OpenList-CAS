@@ -3,6 +3,7 @@ package handles
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	stdpath "path"
 	"strings"
 	"time"
@@ -321,7 +322,9 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 			common.ErrorResp(c, err, 500)
 			return
 		}
-		if storage.Config().MustProxy() || storage.GetStorage().WebProxy {
+		if typeName != obj.GetName() {
+			rawURL = buildObjectAccessURL(c, reqPath, isEncrypt(meta, reqPath), common.ShouldProxy(storage, typeName), "cas_video")
+		} else if storage.Config().MustProxy() || storage.GetStorage().WebProxy {
 			rawURL = common.GenerateDownProxyURL(storage.GetStorage(), reqPath)
 			if rawURL == "" {
 				query := ""
@@ -333,8 +336,6 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 					utils.EncodePath(reqPath, true),
 					query)
 			}
-		} else if typeName != obj.GetName() {
-			rawURL = buildObjectAccessURL(c, reqPath, isEncrypt(meta, reqPath), common.ShouldProxy(storage, typeName))
 		} else {
 			// file have raw url
 			if url, ok := model.GetUrl(obj); ok {
@@ -386,15 +387,11 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 	})
 }
 
-type casPreviewNamer interface {
-	CASPreviewName(ctx context.Context, file model.Obj) (string, error)
-}
-
 func resolveCASPreviewTypeName(ctx context.Context, storage driver.Driver, obj model.Obj) string {
 	if obj == nil {
 		return ""
 	}
-	namer, ok := storage.(casPreviewNamer)
+	namer, ok := storage.(driver.CASPreviewNamer)
 	if !ok || obj.IsDir() {
 		return obj.GetName()
 	}
@@ -405,10 +402,17 @@ func resolveCASPreviewTypeName(ctx context.Context, storage driver.Driver, obj m
 	return name
 }
 
-func buildObjectAccessURL(c *gin.Context, reqPath string, encrypt bool, proxy bool) string {
+func buildObjectAccessURL(c *gin.Context, reqPath string, encrypt bool, proxy bool, linkType string) string {
 	query := ""
+	values := neturl.Values{}
+	if linkType != "" {
+		values.Set("type", linkType)
+	}
 	if encrypt || setting.GetBool(conf.SignAll) {
-		query = "?sign=" + sign.Sign(reqPath)
+		values.Set("sign", sign.Sign(reqPath))
+	}
+	if encoded := values.Encode(); encoded != "" {
+		query = "?" + encoded
 	}
 	prefix := "/d"
 	if proxy {

@@ -1335,7 +1335,7 @@ func (y *Cloud189PC) getFamilyID() (string, error) {
 }
 
 // 保存家庭云中的文件到个人云
-func (y *Cloud189PC) SaveFamilyFileToPersonCloud(ctx context.Context, familyId string, srcObj, dstDir model.Obj, overwrite bool) error {
+func (y *Cloud189PC) SaveFamilyFileToPersonCloud(ctx context.Context, familyId string, srcObj, dstDir model.Obj, overwrite bool, targetName ...string) error {
 	// _, err := y.post(API_URL+"/family/file/saveFileToMember.action", func(req *resty.Request) {
 	// 	req.SetQueryParams(map[string]string{
 	// 		"channelId":    "home",
@@ -1346,16 +1346,21 @@ func (y *Cloud189PC) SaveFamilyFileToPersonCloud(ctx context.Context, familyId s
 	// }, nil)
 	// return err
 
+	other := map[string]string{
+		"groupId":  "null",
+		"copyType": "2",
+		"shareId":  "null",
+	}
+	if len(targetName) > 0 && strings.TrimSpace(targetName[0]) != "" && targetName[0] != srcObj.GetName() {
+		other["targetFileName"] = targetName[0]
+	}
+
 	task := BatchTaskInfo{
 		FileId:   srcObj.GetID(),
 		FileName: srcObj.GetName(),
 		IsFolder: BoolToNumber(srcObj.IsDir()),
 	}
-	resp, err := y.CreateBatchTask("COPY", familyId, dstDir.GetID(), map[string]string{
-		"groupId":  "null",
-		"copyType": "2",
-		"shareId":  "null",
-	}, task)
+	resp, err := y.CreateBatchTask("COPY", familyId, dstDir.GetID(), other, task)
 	if err != nil {
 		return err
 	}

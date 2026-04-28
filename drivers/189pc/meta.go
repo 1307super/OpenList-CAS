@@ -27,6 +27,7 @@ type Addition struct {
 	DeleteCASAfterRestore       bool   `json:"delete_cas_after_restore" help:"After restoring the source file, delete the .cas file and clear recycle bin"`
 	AutoRestoreExistingCAS      bool   `json:"auto_restore_existing_cas" help:"Automatically scan monitored directories and restore .cas files"`
 	AutoRestoreExistingCASPaths string `json:"auto_restore_existing_cas_paths" type:"text" help:"One path per line; monitors these directories and subdirectories only. Empty means disabled"`
+	CASExtAllowlist             string `json:"cas_ext_allowlist" help:"CAS extension allowlist shared with Local. Empty means all extensions are allowed. Example: mp4,mkv,iso,zip"`
 }
 
 var config = driver.Config{
