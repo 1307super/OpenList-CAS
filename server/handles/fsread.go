@@ -3,7 +3,6 @@ package handles
 import (
 	"context"
 	"fmt"
-	neturl "net/url"
 	stdpath "path"
 	"strings"
 	"time"
@@ -322,9 +321,7 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 			common.ErrorResp(c, err, 500)
 			return
 		}
-		if typeName != obj.GetName() {
-			rawURL = buildObjectAccessURL(c, reqPath, isEncrypt(meta, reqPath), common.ShouldProxy(storage, typeName), "cas_video")
-		} else if storage.Config().MustProxy() || storage.GetStorage().WebProxy {
+		if storage.Config().MustProxy() || storage.GetStorage().WebProxy {
 			rawURL = common.GenerateDownProxyURL(storage.GetStorage(), reqPath)
 			if rawURL == "" {
 				query := ""
@@ -336,6 +333,8 @@ func FsGet(c *gin.Context, req *FsGetReq, user *model.User) {
 					utils.EncodePath(reqPath, true),
 					query)
 			}
+		} else if typeName != obj.GetName() {
+			rawURL = buildObjectAccessURL(c, reqPath, isEncrypt(meta, reqPath), common.ShouldProxy(storage, typeName))
 		} else {
 			// file have raw url
 			if url, ok := model.GetUrl(obj); ok {
@@ -402,17 +401,10 @@ func resolveCASPreviewTypeName(ctx context.Context, storage driver.Driver, obj m
 	return name
 }
 
-func buildObjectAccessURL(c *gin.Context, reqPath string, encrypt bool, proxy bool, linkType string) string {
+func buildObjectAccessURL(c *gin.Context, reqPath string, encrypt bool, proxy bool) string {
 	query := ""
-	values := neturl.Values{}
-	if linkType != "" {
-		values.Set("type", linkType)
-	}
 	if encrypt || setting.GetBool(conf.SignAll) {
-		values.Set("sign", sign.Sign(reqPath))
-	}
-	if encoded := values.Encode(); encoded != "" {
-		query = "?" + encoded
+		query = "?sign=" + sign.Sign(reqPath)
 	}
 	prefix := "/d"
 	if proxy {
