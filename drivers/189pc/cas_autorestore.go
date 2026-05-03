@@ -73,6 +73,14 @@ func (y *Cloud189PC) autoRestorePathMonitored(dirPath string) bool {
 	return false
 }
 
+func (y *Cloud189PC) startManualRefreshAutoRestore(ctx context.Context, dir model.Obj, dirPath string) {
+	go func() {
+		if err := y.restoreCASInCurrentDir(context.WithoutCancel(ctx), dir, dirPath); err != nil {
+			utils.Log.Errorf("manualRefreshAutoRestoreCASError:%s:%s", dirPath, err)
+		}
+	}()
+}
+
 func (y *Cloud189PC) restoreCASInCurrentDir(ctx context.Context, dir model.Obj, dirPath string) error {
 	files, err := y.getFiles(ctx, dir.GetID(), y.isFamily())
 	if err != nil {
@@ -146,8 +154,8 @@ func (y *Cloud189PC) restoreCASObj(ctx context.Context, dir model.Obj, dirPath s
 			utils.Log.Errorf("autoRestoreCASDeleteError:%s:%s", obj.GetName(), err)
 			return
 		}
-		op.Cache.DeleteDirectory(y, dirPath)
 	}
+	op.Cache.DeleteDirectory(y, dirPath)
 	y.notifyTaskDone()
 }
 

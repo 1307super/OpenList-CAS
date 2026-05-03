@@ -188,9 +188,7 @@ func (y *Cloud189PC) autoRestoreInterval() time.Duration {
 
 func (y *Cloud189PC) List(ctx context.Context, dir model.Obj, args model.ListArgs) ([]model.Obj, error) {
 	if dirPath, ok := y.manualRefreshAutoRestorePath(args); ok {
-		if err := y.restoreCASInCurrentDir(ctx, dir, dirPath); err != nil {
-			utils.Log.Errorf("manualRefreshAutoRestoreCASError:%s:%s", dirPath, err)
-		}
+		y.startManualRefreshAutoRestore(ctx, dir, dirPath)
 	}
 	return y.getFiles(ctx, dir.GetID(), y.isFamily())
 }
