@@ -666,6 +666,7 @@ func Put(ctx context.Context, storage driver.Driver, dstDirPath string, file mod
 	}
 
 	var newObj model.Obj
+	ctx = context.WithValue(ctx, driver.DstDirPathKey, dstDirPath)
 	switch s := storage.(type) {
 	case driver.PutResult:
 		newObj, err = s.Put(ctx, parentDir, file, up)
