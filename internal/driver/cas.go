@@ -9,3 +9,12 @@ import (
 type CASPreviewNamer interface {
 	CASPreviewName(ctx context.Context, file model.Obj) (string, error)
 }
+
+type ctxKey struct{}
+
+var DstDirPathKey = ctxKey{}
+
+func DstDirPathFromCtx(ctx context.Context) string {
+	s, _ := ctx.Value(DstDirPathKey).(string)
+	return s
+}

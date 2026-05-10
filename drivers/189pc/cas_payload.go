@@ -56,6 +56,7 @@ func (y *Cloud189PC) uploadCAS(ctx context.Context, dstDir model.Obj, info *casU
 	if err != nil {
 		return nil, err
 	}
+	y.generateStrm(ctx, casObj.Name)
 	if uploadedCASObj != nil {
 		return uploadedCASObj, nil
 	}
