@@ -972,6 +972,12 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 	}
 
 	uploadInfo := uploadProgress.UploadInfo.Data
+	// initMultiUpload 未命中秒传，通过 checkTransSecond 二次确认
+	if uploadInfo.FileDataExists != 1 {
+		if checkResp, checkErr := y.checkTransSecond(ctx, isFamily, fileMd5Hex, sliceMd5Hex, uploadInfo.UploadFileID); checkErr == nil && checkResp.Data.FileDataExists == 1 {
+			uploadInfo.FileDataExists = 1
+		}
+	}
 	// 网盘中不存在该文件，开始上传
 	if uploadInfo.FileDataExists != 1 {
 		threadG, upCtx := errgroup.NewGroupWithContext(ctx, y.uploadThread,
@@ -1038,6 +1044,28 @@ func (y *Cloud189PC) FastUpload(ctx context.Context, dstDir model.Obj, file mode
 		MD5:      fileMd5Hex,
 		SliceMD5: sliceMd5Hex,
 	}, nil
+}
+
+// checkTransSecond 二次确认是否可秒传
+func (y *Cloud189PC) checkTransSecond(ctx context.Context, isFamily bool, fileMd5, sliceMd5, uploadFileId string) (*InitMultiUploadResp, error) {
+	fullUrl := UPLOAD_URL
+	if isFamily {
+		fullUrl += "/family"
+	} else {
+		fullUrl += "/person"
+	}
+	var resp InitMultiUploadResp
+	_, err := y.request(fullUrl+"/checkTransSecond", http.MethodGet, func(req *resty.Request) {
+		req.SetContext(ctx)
+	}, Params{
+		"fileMd5":      fileMd5,
+		"sliceMd5":     sliceMd5,
+		"uploadFileId": uploadFileId,
+	}, &resp, isFamily)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // 获取上传切片信息

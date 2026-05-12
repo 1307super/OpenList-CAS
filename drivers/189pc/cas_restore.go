@@ -86,7 +86,11 @@ func (y *Cloud189PC) restoreCASDirect(ctx context.Context, dstDir model.Obj, inf
 		return nil, err
 	}
 	if uploadInfo.Data.FileDataExists != 1 {
-		return nil, fmt.Errorf("cas restore failed: source file data does not exist in cloud")
+		// initMultiUpload 未命中秒传，通过 checkTransSecond 二次确认
+		checkResp, checkErr := y.checkTransSecond(ctx, isFamily, strings.ToUpper(info.MD5), strings.ToUpper(info.SliceMD5), uploadInfo.Data.UploadFileID)
+		if checkErr != nil || checkResp.Data.FileDataExists != 1 {
+			return nil, fmt.Errorf("cas restore failed: source file data does not exist in cloud")
+		}
 	}
 	var resp CommitMultiUploadFileResp
 	_, err = y.request(fullUrl+"/commitMultiUploadFile", http.MethodGet, func(req *resty.Request) {
