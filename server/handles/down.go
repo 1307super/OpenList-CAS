@@ -51,6 +51,26 @@ func Down(c *gin.Context) {
 			return
 		}
 	}
+	if strings.HasSuffix(strings.ToLower(filename), ".cas") {
+		link, file, ok, restoreErr := linkCASDownload(c, rawPath, storage, model.LinkArgs{
+			IP:       c.ClientIP(),
+			Header:   c.Request.Header,
+			Type:     c.Query("type"),
+			Redirect: true,
+		})
+		if restoreErr != nil {
+			common.ErrorPage(c, restoreErr, 500)
+			return
+		}
+		if ok {
+			if common.ShouldProxy(storage, file.GetName()) {
+				proxy(c, link, file, storage.GetStorage().ProxyRange)
+			} else {
+				redirect(c, link)
+			}
+			return
+		}
+	}
 	if common.ShouldProxy(storage, filename) {
 		Proxy(c)
 		return
@@ -84,6 +104,20 @@ func Proxy(c *gin.Context) {
 		})
 		if previewErr != nil {
 			common.ErrorPage(c, previewErr, 500)
+			return
+		}
+		if ok {
+			proxy(c, link, file, storage.GetStorage().ProxyRange)
+			return
+		}
+	}
+	if strings.HasSuffix(strings.ToLower(filename), ".cas") {
+		link, file, ok, restoreErr := linkCASDownload(c, rawPath, storage, model.LinkArgs{
+			Header: c.Request.Header,
+			Type:   c.Query("type"),
+		})
+		if restoreErr != nil {
+			common.ErrorPage(c, restoreErr, 500)
 			return
 		}
 		if ok {
@@ -253,4 +287,33 @@ func canProxy(storage driver.Driver, filename string) bool {
 		return true
 	}
 	return false
+}
+
+func linkCASDownload(c *gin.Context, rawPath string, storage driver.Driver, args model.LinkArgs) (*model.Link, model.Obj, bool, error) {
+	restorer, ok := storage.(driver.CASDownloadRestorer)
+	if !ok {
+		return nil, nil, false, nil
+	}
+	obj, err := fs.Get(c.Request.Context(), rawPath, &fs.GetArgs{})
+	if err != nil {
+		return nil, nil, false, err
+	}
+	restoreName, err := restorer.CASDownloadRestoreName(c.Request.Context(), obj)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if restoreName == "" || restoreName == obj.GetName() {
+		return nil, nil, false, nil
+	}
+	args.Type = "cas_download"
+	link, file, err := fs.Link(c.Request.Context(), rawPath, args)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if file != nil {
+		file = &model.ObjWrapName{Name: restoreName, Obj: file}
+	} else {
+		file = &model.Object{Name: restoreName, Size: obj.GetSize(), Modified: obj.ModTime(), Ctime: obj.CreateTime(), HashInfo: obj.GetHash()}
+	}
+	return link, file, true, nil
 }

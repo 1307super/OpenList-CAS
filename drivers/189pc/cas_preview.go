@@ -18,7 +18,7 @@ func (y *Cloud189PC) shouldPlayCAS(file model.Obj, args model.LinkArgs) bool {
 		return false
 	}
 	switch strings.ToLower(args.Type) {
-	case "cas_video":
+	case "cas_video", "cas_download":
 		return true
 	default:
 		return false
@@ -55,7 +55,10 @@ func (y *Cloud189PC) linkCASVideo(ctx context.Context, file model.Obj, args mode
 	if err != nil {
 		return nil, err
 	}
-	if !casmeta.ExtAllowed(previewName, y.CASExtAllowlist) || !isVideoName(previewName) {
+	if !casmeta.ExtAllowed(previewName, y.CASExtAllowlist) {
+		return y.Link(ctx, file, model.LinkArgs{IP: args.IP, Header: args.Header, Type: "raw_cas", Redirect: args.Redirect})
+	}
+	if args.Type != "cas_download" && !isVideoName(previewName) {
 		return y.Link(ctx, file, model.LinkArgs{IP: args.IP, Header: args.Header, Type: "raw_cas", Redirect: args.Redirect})
 	}
 	y.beginCleanupTask()
@@ -124,6 +127,24 @@ func (y *Cloud189PC) linkObj(ctx context.Context, file model.Obj, args model.Lin
 			"User-Agent": []string{base.UserAgent},
 		},
 	}, nil
+}
+
+func (y *Cloud189PC) CASDownloadRestoreName(ctx context.Context, file model.Obj) (string, error) {
+	if !y.CASDownloadRestore || !isCASName(file.GetName()) {
+		return file.GetName(), nil
+	}
+	info, err := y.parseCASFromObj(ctx, file)
+	if err != nil {
+		return "", err
+	}
+	restoreName, err := resolveCASRestoreName(file.GetName(), info)
+	if err != nil {
+		return "", err
+	}
+	if !casmeta.ExtAllowed(restoreName, y.CASExtAllowlist) {
+		return file.GetName(), nil
+	}
+	return restoreName, nil
 }
 
 func isVideoName(name string) bool {

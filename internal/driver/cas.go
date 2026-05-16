@@ -10,6 +10,10 @@ type CASPreviewNamer interface {
 	CASPreviewName(ctx context.Context, file model.Obj) (string, error)
 }
 
+type CASDownloadRestorer interface {
+	CASDownloadRestoreName(ctx context.Context, file model.Obj) (string, error)
+}
+
 type ctxKey struct{}
 
 var DstDirPathKey = ctxKey{}
